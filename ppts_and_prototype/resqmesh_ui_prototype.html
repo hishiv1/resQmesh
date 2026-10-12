@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResQMesh Prototype</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: #fff;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Phone Frame */
+        .phone-mockup {
+            width: 375px;
+            height: 812px;
+            background-color: #0F172A; /* Deep Slate */
+            border-radius: 40px;
+            border: 12px solid #1E293B;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(6, 182, 212, 0.25);
+        }
+
+        /* Status Bar */
+        .status-bar {
+            height: 44px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 10;
+            position: relative;
+        }
+
+        .status-icons {
+            display: flex;
+            gap: 8px;
+            color: #94A3B8;
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 60px 24px 24px 24px;
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.3s ease;
+            opacity: 1;
+            z-index: 1;
+        }
+
+        .screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* --- SCREEN 1: HOME --- */
+        #screen-home .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .gps-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(34, 197, 94, 0.1);
+            color: #22C55E;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .gps-status i { font-size: 10px; }
+
+        .triage-section {
+            margin-bottom: 40px;
+        }
+
+        .triage-title {
+            font-size: 14px;
+            color: #94A3B8;
+            margin-bottom: 12px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .chips-container {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .chip {
+            background: #1E293B;
+            border: 2px solid #334155;
+            padding: 12px 16px;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1;
+        }
+
+        .chip i { font-size: 20px; color: #94A3B8; }
+        .chip span { font-size: 12px; font-weight: 600; color: #94A3B8; }
+
+        .chip.active {
+            border-color: #06B6D4;
+            background: rgba(6, 182, 212, 0.1);
+        }
+        .chip.active i, .chip.active span { color: #06B6D4; }
+
+        .sos-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .sos-btn {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: #EF4444;
+            border: none;
+            color: white;
+            font-size: 48px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 0 0 15px rgba(239, 68, 68, 0.2), 0 0 0 30px rgba(239, 68, 68, 0.05);
+            transition: transform 0.1s;
+        }
+
+        .sos-btn:active { transform: scale(0.95); }
+
+        /* --- SCREEN 2: BROADCASTING --- */
+        #screen-broadcasting {
+            align-items: center;
+            justify-content: center;
+        }
+
+        .radar {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .radar-center {
+            width: 60px;
+            height: 60px;
+            background: #06B6D4;
+            border-radius: 50%;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+        }
+
+        .radar-ring {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid #06B6D4;
+            animation: ripple 2s linear infinite;
+        }
+        .radar-ring:nth-child(2) { animation-delay: 0.6s; }
+        .radar-ring:nth-child(3) { animation-delay: 1.2s; }
+
+        @keyframes ripple {
+            0% { transform: scale(0.3); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+
+        .broadcast-stats {
+            background: #1E293B;
+            padding: 20px;
+            border-radius: 16px;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .stat-row:last-child { margin-bottom: 0; }
+        .stat-label { color: #94A3B8; }
+        .stat-value { font-weight: 600; color: #06B6D4; }
+
+        .cancel-btn {
+            background: transparent;
+            border: 2px solid #334155;
+            color: #94A3B8;
+            padding: 16px;
+            border-radius: 12px;
+            width: 100%;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: auto;
+        }
+
+        /* --- SCREEN 3: RECEIVER ALERT --- */
+        #screen-receiver {
+            background: #EF4444;
+            animation: flashBg 1s infinite alternate;
+        }
+
+        @keyframes flashBg {
+            0% { background: #EF4444; }
+            100% { background: #991B1B; }
+        }
+
+        #screen-receiver .alert-icon {
+            font-size: 80px;
+            color: white;
+            text-align: center;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            animation: shake 0.5s infinite;
+        }
+
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+
+        .alert-title {
+            font-size: 32px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .alert-distance {
+            text-align: center;
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 40px;
+        }
+
+        .alert-details {
+            background: rgba(0,0,0,0.2);
+            padding: 20px;
+            border-radius: 16px;
+            margin-bottom: auto;
+        }
+
+        .alert-details p { margin-bottom: 10px; font-size: 16px; }
+
+        .nav-btn {
+            background: white;
+            color: #EF4444;
+            border: none;
+            padding: 20px;
+            border-radius: 16px;
+            font-size: 18px;
+            font-weight: 800;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Presentation Controls */
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+
+        .ctrl-btn {
+            background: #1E293B;
+            border: 1px solid #334155;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .ctrl-btn:hover { background: #334155; }
+    </style>
+</head>
+<body>
+
+    <div class="phone-mockup">
+        <!-- Status Bar -->
+        <div class="status-bar">
+            <span>10:48</span>
+            <div class="status-icons">
+                <i class="fa-solid fa-signal" style="text-decoration: line-through; color: #EF4444;"></i>
+                <i class="fa-brands fa-bluetooth-b" style="color: #06B6D4;"></i>
+                <i class="fa-solid fa-battery-three-quarters"></i>
+            </div>
+        </div>
+
+        <!-- SCREEN 1: HOME (PANIC UI) -->
+        <div id="screen-home" class="screen">
+            <div class="header">
+                <div class="gps-status">
+                    <i class="fa-solid fa-location-dot"></i> GPS Locked (12m)
+                </div>
+            </div>
+
+            <div class="triage-section">
+                <div class="triage-title">Optional Triage Context</div>
+                <div class="chips-container">
+                    <div class="chip" onclick="toggleChip(this)">
+                        <i class="fa-solid fa-suitcase-medical"></i>
+                        <span>Medical</span>
+                    </div>
+                    <div class="chip" onclick="toggleChip(this)">
+                        <i class="fa-solid fa-fire"></i>
+                        <span>Fire</span>
+                    </div>
+                    <div class="chip" onclick="toggleChip(this)">
+                        <i class="fa-solid fa-person-falling"></i>
+                        <span>Trapped</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sos-container">
+                <button class="sos-btn" onclick="triggerSOS()">SOS</button>
+            </div>
+            
+            <p style="text-align: center; color: #64748B; font-size: 12px; margin-top: 20px;">
+                ResQMesh Protocol Ready.<br>Zero cellular required.
+            </p>
+        </div>
+
+        <!-- SCREEN 2: BROADCASTING (ORIGINATOR) -->
+        <div id="screen-broadcasting" class="screen hidden">
+            <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; color: #06B6D4;">Broadcasting...</h2>
+            <p style="color: #94A3B8; margin-bottom: 40px; text-align: center;">Delay-Tolerant Payload active.</p>
+
+            <div class="radar">
+                <div class="radar-ring"></div>
+                <div class="radar-ring"></div>
+                <div class="radar-ring"></div>
+                <div class="radar-center">
+                    <i class="fa-solid fa-broadcast-tower"></i>
+                </div>
+            </div>
+
+            <div class="broadcast-stats">
+                <div class="stat-row">
+                    <span class="stat-label">Payload Size:</span>
+                    <span class="stat-value">312 Bytes</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Initial TTL:</span>
+                    <span class="stat-value">5 Hops</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Peers Reached:</span>
+                    <span class="stat-value" id="peer-count">0 Nodes</span>
+                </div>
+            </div>
+
+            <button class="cancel-btn" onclick="resetApp()">Cancel Broadcast</button>
+        </div>
+
+        <!-- SCREEN 3: RECEIVER ALERT (DATA MULE) -->
+        <div id="screen-receiver" class="screen hidden">
+            <div class="alert-icon">
+                <i class="fa-solid fa-bullhorn"></i>
+            </div>
+            <div class="alert-title">NEIGHBOR<br>EMERGENCY</div>
+            <div class="alert-distance">📍 45 Meters Away</div>
+
+            <div class="alert-details">
+                <p><strong>Type:</strong> Medical Issue</p>
+                <p><strong>Received via:</strong> BLE Mesh</p>
+                <p><strong>TTL Remaining:</strong> 4 Hops</p>
+            </div>
+
+            <button class="nav-btn" onclick="resetApp()">
+                <i class="fa-solid fa-location-arrow"></i> Navigate to Help
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Presentation Controls (For faculty demo) -->
+    <div class="controls">
+        <button class="ctrl-btn" onclick="resetApp()">1. Originator View</button>
+        <button class="ctrl-btn" onclick="simulateReceiver()">2. Bystander View</button>
+    </div>
+
+    <script>
+        // UI Logic
+        function toggleChip(element) {
+            // Deselect others
+            document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+            // Select clicked
+            element.classList.add('active');
+        }
+
+        function triggerSOS() {
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-broadcasting').classList.remove('hidden');
+            
+            // Simulate discovering peers
+            let count = 0;
+            let counterEl = document.getElementById('peer-count');
+            counterEl.innerText = "0 Nodes";
+            
+            window.simInterval = setInterval(() => {
+                if(count < 3) {
+                    count++;
+                    counterEl.innerText = count + " Nodes";
+                }
+            }, 2000);
+        }
+
+        function resetApp() {
+            clearInterval(window.simInterval);
+            document.getElementById('screen-home').classList.remove('hidden');
+            document.getElementById('screen-broadcasting').classList.add('hidden');
+            document.getElementById('screen-receiver').classList.add('hidden');
+        }
+
+        function simulateReceiver() {
+            clearInterval(window.simInterval);
+            document.getElementById('screen-home').classList.add('hidden');
+            document.getElementById('screen-broadcasting').classList.add('hidden');
+            document.getElementById('screen-receiver').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
