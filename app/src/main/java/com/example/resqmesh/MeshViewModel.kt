@@ -3,12 +3,14 @@ package com.example.resqmesh
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -32,6 +34,10 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = MeshRepository(database.packetDao())
     private val nearbyManager = NearbyConnectionsManager(application, repository, viewModelScope)
     private val locationTracker = LocationTracker(application)
+    private val alertManager = SosAlertManager(application)
+
+    private var activeSosPacket: PacketCache? = null
+    private var broadcastJob: Job? = null
 
     val packets: StateFlow<List<PacketCache>> = repository.allPackets
         .stateIn(
@@ -57,27 +63,27 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
     val isDiscovering: StateFlow<Boolean> = nearbyManager.isDiscovering
 
     init {
-        // IMPORTANT: Do NOT call startMesh() here.
-        // At ViewModel construction time, runtime permissions (BT_SCAN, BT_ADVERTISE,
-        // BT_CONNECT, ACCESS_FINE_LOCATION) have NOT been granted yet.
-        // The Nearby Connections API will silently fail without them.
-        // Mesh initialization is deferred to onPermissionsGranted(), which the UI layer
-        // calls after the user has accepted the permission dialog.
-
-        // Wire the reactive pipeline: collect incoming emergency packets from the repository
-        // and update the UI state to show the Receiver Alert screen.
+        // Collect incoming emergency packets from repository
+        // When received, switch screen to RECEIVER_ALERT and trigger alarm sound, vibration & notification
         viewModelScope.launch {
             repository.incomingPacketFlow.collect { packet ->
                 _incomingAlertPacket.value = packet
                 _currentScreen.value = AppScreen.RECEIVER_ALERT
+                alertManager.triggerAlert(packet)
+            }
+        }
+
+        // When a new peer connects, if we are actively broadcasting an SOS, immediately push it to them
+        nearbyManager.onPeerConnectedListener = { endpointId ->
+            activeSosPacket?.let { packet ->
+                nearbyManager.sendPacketToEndpoint(endpointId, packet)
             }
         }
     }
 
     /**
-     * Called by the UI layer AFTER all runtime permissions (BT, Location) have been granted.
-     * This is the ONLY safe point to initialize the Nearby Connections radios.
-     * Idempotent — safe to call multiple times (e.g., on config change).
+     * Called after permissions have been confirmed.
+     * Starts advertising and discovering for Nearby Connections BLE mesh.
      */
     fun onPermissionsGranted() {
         if (_permissionsGranted.value) return
@@ -86,21 +92,15 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
         refreshGpsLocation()
     }
 
-    /**
-     * Starts both advertising and discovery for P2P_CLUSTER mesh formation.
-     * Per Algorithm 1: the device enters both advertising mode (for mesh topology)
-     * and discovering mode (passive scanning / "Mule Mode").
-     */
-    private fun startMesh(deviceName: String = android.os.Build.MODEL) {
-        nearbyManager.startAdvertising(deviceName)
+    private fun startMesh() {
+        nearbyManager.startAdvertising()
         nearbyManager.startDiscovery()
     }
 
     /**
      * Fetches current GPS coordinates and updates the GPS badge state.
-     * Retries once after 3 seconds if the first attempt returns no fix.
      */
-    private fun refreshGpsLocation() {
+    fun refreshGpsLocation() {
         _gpsState.value = GpsState(status = GpsStatus.ACQUIRING)
         viewModelScope.launch {
             try {
@@ -112,7 +112,6 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
                         longitude = lon
                     )
                 } else {
-                    // Retry once after a short delay for GPS cold-start
                     delay(3000)
                     val (lat2, lon2) = locationTracker.getCurrentLocation()
                     _gpsState.value = if (lat2 != 0.0 || lon2 != 0.0) {
@@ -128,22 +127,21 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Dismisses the Receiver Alert screen and returns to Home.
+     * Dismisses the Receiver Alert screen, stops the alarm sound and vibration, and returns to Home.
      */
     fun clearAlertPacket() {
+        alertManager.cancelAlert()
         _incomingAlertPacket.value = null
         _currentScreen.value = AppScreen.HOME
     }
 
     /**
-     * Triggered when the user presses the SOS button.
-     * Fetches GPS internally (MVVM: the View should not handle raw location data),
-     * creates the SOS packet, switches to Broadcasting screen,
-     * and sends the packet into the mesh network.
+     * Triggered when user presses SOS button.
+     * Fetches fresh GPS coordinates, creates packet, switches to BROADCASTING screen,
+     * immediately broadcasts the packet, and initiates continuous re-broadcasting every 3 seconds.
      */
     fun triggerSos(triageType: Int) {
         viewModelScope.launch {
-            // Refresh GPS to get latest coordinates for the SOS payload
             val (lat, lon) = locationTracker.getCurrentLocation()
             if (lat != 0.0 || lon != 0.0) {
                 _gpsState.value = GpsState(
@@ -158,26 +156,42 @@ class MeshViewModel(application: Application) : AndroidViewModel(application) {
                 origin_lat = lat,
                 origin_lon = lon,
                 timestamp = System.currentTimeMillis(),
-                ttl = 5, // Default time-to-live hops for mesh flood relay
+                ttl = 5,
                 triage_type = triageType
             )
+            activeSosPacket = packet
             _currentScreen.value = AppScreen.BROADCASTING
+
+            // Immediate broadcast
             nearbyManager.sendPacket(packet)
+
+            // Continuous re-broadcast loop while BROADCASTING screen is active
+            broadcastJob?.cancel()
+            broadcastJob = viewModelScope.launch {
+                while (isActive && _currentScreen.value == AppScreen.BROADCASTING) {
+                    delay(3000)
+                    if (_currentScreen.value == AppScreen.BROADCASTING) {
+                        activeSosPacket?.let { nearbyManager.broadcastActivePacket(it) }
+                    }
+                }
+            }
         }
     }
 
     /**
-     * Cancels the current SOS broadcast and returns to the Home screen.
-     * Per Algorithm 1: the device returns to Passive Discovering Mode (Mule Mode).
-     * The mesh stays alive — we do NOT tear down all connections. The SOS packet
-     * was already sent as a one-shot broadcast; cancel is purely a UI state change.
+     * Cancels the SOS broadcast and returns to Home screen.
      */
     fun cancelBroadcast() {
+        broadcastJob?.cancel()
+        broadcastJob = null
+        activeSosPacket = null
         _currentScreen.value = AppScreen.HOME
     }
 
     override fun onCleared() {
         super.onCleared()
+        alertManager.cancelAlert()
+        broadcastJob?.cancel()
         nearbyManager.stopAll()
     }
 }

@@ -28,8 +28,38 @@ class LocationTracker(private val context: Context) {
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
             }
             return permissions.toTypedArray()
+        }
+
+        /**
+         * Verifies whether the essential permissions for Nearby Connections BLE mesh and GPS are granted.
+         * The mesh will initialize if core permissions are granted, even if optional notification permissions are pending.
+         */
+        fun hasCoreMeshPermissions(context: Context): Boolean {
+            val hasLocation = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            val hasBt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.BLUETOOTH_SCAN
+                ) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.BLUETOOTH_ADVERTISE
+                ) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.BLUETOOTH_CONNECT
+                ) == PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+
+            return hasLocation && hasBt
         }
     }
 
@@ -59,7 +89,7 @@ class LocationTracker(private val context: Context) {
             } else {
                 Pair(0.0, 0.0)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Pair(0.0, 0.0)
         }
     }

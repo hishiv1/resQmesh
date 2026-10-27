@@ -46,8 +46,8 @@ fun ResQMeshApp(viewModel: MeshViewModel = viewModel()) {
     // ---- Single permission launcher (handles both boot and SOS-fallback requests) ----
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        if (permissions.values.all { it }) {
+    ) { _ ->
+        if (LocationTracker.hasCoreMeshPermissions(context)) {
             viewModel.onPermissionsGranted()
             // If the user pressed SOS before permissions were granted, fire it now
             if (pendingSosAfterPermission) {
@@ -59,12 +59,8 @@ fun ResQMeshApp(viewModel: MeshViewModel = viewModel()) {
 
     // ---- Boot-time permission request ----
     // Per Algorithm 1: the app must enter Passive Discovering Mode (Mule Mode) on launch.
-    // This requires BT_SCAN, BT_ADVERTISE, BT_CONNECT, and ACCESS_FINE_LOCATION at minimum.
     LaunchedEffect(Unit) {
-        val allGranted = LocationTracker.getRequiredPermissions().all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (allGranted) {
+        if (LocationTracker.hasCoreMeshPermissions(context)) {
             viewModel.onPermissionsGranted()
         } else {
             permissionLauncher.launch(LocationTracker.getRequiredPermissions())
@@ -73,10 +69,7 @@ fun ResQMeshApp(viewModel: MeshViewModel = viewModel()) {
 
     // ---- SOS trigger with permission fallback ----
     fun triggerSOS() {
-        val allGranted = LocationTracker.getRequiredPermissions().all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
-        if (!allGranted) {
+        if (!LocationTracker.hasCoreMeshPermissions(context)) {
             // Permissions were denied at boot — re-request and queue the SOS
             pendingSosAfterPermission = true
             permissionLauncher.launch(LocationTracker.getRequiredPermissions())
@@ -159,6 +152,89 @@ fun ResQMeshApp(viewModel: MeshViewModel = viewModel()) {
                     onDismiss = { viewModel.clearAlertPacket() }
                 )
             }
+        }
+
+        // In-App Alarm Pop-Up Dialog when SOS packet arrives
+        if (currentScreen == AppScreen.RECEIVER_ALERT && incomingAlertPacket != null) {
+            val packet = incomingAlertPacket!!
+            val triageName = when (packet.triage_type) {
+                1 -> "Medical Issue"
+                2 -> "Fire Emergency"
+                3 -> "Person Trapped"
+                else -> "General Emergency"
+            }
+
+            AlertDialog(
+                onDismissRequest = { /* Modal: require user action */ },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Campaign,
+                        contentDescription = "Alert",
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(44.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "\u26A0\uFE0F YOUR NEIGHBOUR NEEDS HELP!",
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 18.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "An emergency SOS was received from a nearby peer via BLE Mesh!",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center
+                        )
+                        Surface(
+                            color = Color.White.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = "\u26A0\uFE0F Emergency: $triageName",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "\uD83D\uDCCD Lat: ${String.format("%.4f", packet.origin_lat)}, Lon: ${String.format("%.4f", packet.origin_lon)}",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "\uD83D\uDD17 Mesh Hops Remaining: ${packet.ttl}",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.clearAlertPacket() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Turn Off Alarm & View Map", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                },
+                containerColor = Color(0xFF1E293B),
+                shape = RoundedCornerShape(20.dp)
+            )
         }
     }
 }
